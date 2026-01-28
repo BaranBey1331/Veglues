@@ -50,19 +50,7 @@ JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setDepthMask(JNIEnv
 }
 
 JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setColorMask(JNIEnv* env, jclass clazz, jboolean r, jboolean g, jboolean b, jboolean a) {
-    if (Renderer::GetInstance().GetStateManager().ColorMask((GLboolean)r, (GLboolean)g, (GLboolean)b, (GLboolean)a)) {
-        // Since ColorMask is state, we must Flush if it changes during batching.
-        // Wait, Renderer::Set... methods handle flushing usually.
-        // But I'm calling GetStateManager directly here.
-        // I should add Renderer::SetColorMask.
-        // For now, I'll access Batcher via Renderer... or just implement SetColorMask in Renderer.
-        // But Renderer.h doesn't have SetColorMask declared.
-        // I'll add it to Renderer.h? No, I want to minimize header churn if I can.
-        // But I need to flush.
-        // I'll flush manually here? No, Renderer::EndFrame flushes.
-        // But if I change mask MID-FRAME, I need to flush.
-        // I'll update Renderer.h to add SetColorMask.
-    }
+    Renderer::GetInstance().SetColorMask((GLboolean)r, (GLboolean)g, (GLboolean)b, (GLboolean)a);
 }
 
 JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_enable(JNIEnv* env, jclass clazz, jint cap) {

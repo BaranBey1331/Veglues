@@ -7,7 +7,6 @@
 
 #define INVALID_GL_UINT 0xFFFFFFFF
 
-// Forward declare for C callback
 void Renderer_OnThermalStatusChanged(void *data, AThermalStatus status);
 
 Renderer::Renderer() : currentProgramId(INVALID_GL_UINT), currentTextureId(INVALID_GL_UINT),
@@ -175,27 +174,37 @@ void Renderer::DrawGeometry(const void* vertices, int vertexSizeBytes, int verte
     batcher.AddGeometry(vertices, vertexSizeBytes, vertexCount, indices, indexCount, drawMode);
 }
 
+// Optimization Fix: Must flush BEFORE changing state to ensure pending geometry uses OLD state.
 void Renderer::SetBlendFunc(GLenum sfactor, GLenum dfactor) {
-    if (stateManager.BlendFunc(sfactor, dfactor)) batcher.Flush();
+    batcher.Flush();
+    stateManager.BlendFunc(sfactor, dfactor);
 }
 void Renderer::SetDepthMask(GLboolean flag) {
-    if (stateManager.DepthMask(flag)) batcher.Flush();
+    batcher.Flush();
+    stateManager.DepthMask(flag);
 }
 void Renderer::SetColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a) {
-    if (stateManager.ColorMask(r, g, b, a)) batcher.Flush();
+    batcher.Flush();
+    stateManager.ColorMask(r, g, b, a);
 }
 void Renderer::Enable(GLenum cap) {
-    if (stateManager.Enable(cap)) batcher.Flush();
+    batcher.Flush();
+    stateManager.Enable(cap);
 }
 void Renderer::Disable(GLenum cap) {
-    if (stateManager.Disable(cap)) batcher.Flush();
+    batcher.Flush();
+    stateManager.Disable(cap);
 }
 void Renderer::SetUniform1i(GLint location, GLint v0) {
-    if (stateManager.Uniform1i(location, v0)) batcher.Flush();
+    // Uniforms update "Next Draw". If current batch pending, it uses OLD uniform.
+    batcher.Flush();
+    stateManager.Uniform1i(location, v0);
 }
 void Renderer::SetUniform1f(GLint location, GLfloat v0) {
-    if (stateManager.Uniform1f(location, v0)) batcher.Flush();
+    batcher.Flush();
+    stateManager.Uniform1f(location, v0);
 }
 void Renderer::SetUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) {
-    if (stateManager.UniformMatrix4fv(location, count, transpose, value)) batcher.Flush();
+    batcher.Flush();
+    stateManager.UniformMatrix4fv(location, count, transpose, value);
 }
