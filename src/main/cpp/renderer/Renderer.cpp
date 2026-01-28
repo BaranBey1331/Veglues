@@ -4,14 +4,16 @@
 #include <sched.h>
 #include <unistd.h>
 #include <time.h>
+#include <dlfcn.h>
 
 #define INVALID_GL_UINT 0xFFFFFFFF
 
+// Forward declare for C callback
 void Renderer_OnThermalStatusChanged(void *data, AThermalStatus status);
 
 Renderer::Renderer() : currentProgramId(INVALID_GL_UINT), currentTextureId(INVALID_GL_UINT),
                        cullingEnabled(false), performanceMode(false), extremeMode(false), thermalControl(false),
-                       thermalManager(nullptr), currentThermalStatus(ETHERMAL_STATUS_NONE),
+                       thermalManager(nullptr), currentThermalStatus(ATHERMAL_STATUS_NONE),
                        lastFrameTimeNs(0), currentFPS(60.0f) {
 }
 
@@ -24,23 +26,37 @@ Renderer& Renderer::GetInstance() {
     return instance;
 }
 
+// Helper to check API level at runtime if __ANDROID_API__ isn't sufficient or if we want weak linking
+// But for build fixing, __ANDROID_API__ check is good.
+// However, since we defined the header ourselves, the functions EXIST in the header.
+// But they might not exist in the library if we link against old libandroid.
+// To be safe and compliant with "Only available on Android 11+", we guard.
+
 void Renderer::Init() {
     stateManager.Reset();
     shaderCache.Clear();
 
+#if __ANDROID_API__ >= 30
     thermalManager = AThermal_acquireManager();
     if (thermalManager) {
         AThermal_registerThermalStatusListener(thermalManager, Renderer::OnThermalStatusChanged, this);
         currentThermalStatus = AThermal_getCurrentThermalStatus(thermalManager);
     }
+#else
+    // Fallback or dlsym if needed, but for now just disable thermal features on old OS
+    thermalManager = nullptr;
+    currentThermalStatus = ATHERMAL_STATUS_NONE;
+#endif
 }
 
 void Renderer::Shutdown() {
+#if __ANDROID_API__ >= 30
     if (thermalManager) {
         AThermal_unregisterThermalStatusListener(thermalManager, Renderer::OnThermalStatusChanged, this);
         AThermal_releaseManager(thermalManager);
         thermalManager = nullptr;
     }
+#endif
     batcher.Flush();
     shaderCache.Clear();
 }
@@ -115,7 +131,7 @@ bool Renderer::IsVisible(float minX, float minY, float minZ, float maxX, float m
         if (volume < 0.1f) return false;
     }
 
-    if (thermalControl && currentThermalStatus >= ETHERMAL_STATUS_SEVERE) {
+    if (thermalControl && currentThermalStatus >= ATHERMAL_STATUS_SEVERE) {
         float volume = (maxX - minX) * (maxY - minY) * (maxZ - minZ);
         if (volume < 1.0f) return false;
     }
@@ -174,7 +190,6 @@ void Renderer::DrawGeometry(const void* vertices, int vertexSizeBytes, int verte
     batcher.AddGeometry(vertices, vertexSizeBytes, vertexCount, indices, indexCount, drawMode);
 }
 
-// Optimization Fix: Must flush BEFORE changing state to ensure pending geometry uses OLD state.
 void Renderer::SetBlendFunc(GLenum sfactor, GLenum dfactor) {
     batcher.Flush();
     stateManager.BlendFunc(sfactor, dfactor);
@@ -196,7 +211,6 @@ void Renderer::Disable(GLenum cap) {
     stateManager.Disable(cap);
 }
 void Renderer::SetUniform1i(GLint location, GLint v0) {
-    // Uniforms update "Next Draw". If current batch pending, it uses OLD uniform.
     batcher.Flush();
     stateManager.Uniform1i(location, v0);
 }

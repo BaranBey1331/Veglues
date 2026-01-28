@@ -82,7 +82,7 @@ private:
     // Culling
     FrustumPlane frustumPlanes[6];
     bool cullingEnabled;
-    float cameraX, cameraY, cameraZ; // For distance culling
+    float cameraX, cameraY, cameraZ;
 
     // Aggressive Optimization
     bool performanceMode;
