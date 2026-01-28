@@ -18,13 +18,26 @@ JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_endFrame(JNIEnv* en
 JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_drawGeometry(JNIEnv* env, jclass clazz,
         jobject vertices, jint vertexSizeBytes, jint vertexCount,
         jobject indices, jint indexCount,
-        jint textureId, jint shaderId) {
+        jint textureId, jint shaderId,
+        jint drawMode,
+        jfloat minX, jfloat minY, jfloat minZ,
+        jfloat maxX, jfloat maxY, jfloat maxZ) {
 
     void* vPtr = env->GetDirectBufferAddress(vertices);
     void* iPtr = env->GetDirectBufferAddress(indices);
 
     if (vPtr && iPtr) {
-        Renderer::GetInstance().DrawGeometry(vPtr, vertexSizeBytes, vertexCount, iPtr, indexCount, (GLuint)textureId, (GLuint)shaderId);
+        Renderer::GetInstance().DrawGeometry(vPtr, vertexSizeBytes, vertexCount, iPtr, indexCount,
+                                             (GLuint)textureId, (GLuint)shaderId, (GLenum)drawMode,
+                                             minX, minY, minZ, maxX, maxY, maxZ);
+    }
+}
+
+JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setViewProjection(JNIEnv* env, jclass clazz, jfloatArray matrix) {
+    jfloat* mat = env->GetFloatArrayElements(matrix, NULL);
+    if (mat) {
+        Renderer::GetInstance().SetViewProj(mat);
+        env->ReleaseFloatArrayElements(matrix, mat, JNI_ABORT);
     }
 }
 

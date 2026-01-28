@@ -5,6 +5,24 @@
 #include "ShaderCache.h"
 #include "Batcher.h"
 #include <mutex>
+#include <vector>
+#include <cmath>
+
+struct FrustumPlane {
+    float a, b, c, d;
+
+    void Normalize() {
+        float len = sqrtf(a*a + b*b + c*c);
+        if (len > 0) {
+            float invLen = 1.0f / len;
+            a *= invLen; b *= invLen; c *= invLen; d *= invLen;
+        }
+    }
+
+    float Distance(float x, float y, float z) const {
+        return a*x + b*y + c*z + d;
+    }
+};
 
 class Renderer {
 public:
@@ -14,18 +32,20 @@ public:
     void Shutdown();
 
     // The main draw call from Java/Engine
-    // Assumes standard vertex format for this optimization pass
     void DrawGeometry(const void* vertices, int vertexSizeBytes, int vertexCount,
                       const void* indices, int indexCount,
-                      GLuint textureId, GLuint programId);
+                      GLuint textureId, GLuint programId,
+                      GLenum drawMode,
+                      float minX, float minY, float minZ,
+                      float maxX, float maxY, float maxZ);
 
-    // State setters that trigger batch flushes
+    void SetViewProj(const float* mat);
+
     void SetBlendFunc(GLenum sfactor, GLenum dfactor);
     void SetDepthMask(GLboolean flag);
     void Enable(GLenum cap);
     void Disable(GLenum cap);
 
-    // Frame lifecycle
     void BeginFrame();
     void EndFrame();
 
@@ -45,8 +65,14 @@ private:
     GLuint currentProgramId;
     GLuint currentTextureId;
 
-    // Thread safety if needed (though rendering is usually single threaded)
     std::mutex renderMutex;
+
+    // Culling
+    FrustumPlane frustumPlanes[6];
+    bool cullingEnabled;
+
+    void UpdateFrustum(const float* vp);
+    bool IsVisible(float minX, float minY, float minZ, float maxX, float maxY, float maxZ);
 };
 
 #endif // MOBILEGLUES_RENDERER_H

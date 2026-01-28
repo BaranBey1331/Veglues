@@ -14,19 +14,8 @@ public class RenderHook {
         System.loadLibrary("mobileglues-renderer");
     }
 
-    /**
-     * Initialize the renderer backend.
-     */
     public static native void init();
-
-    /**
-     * Mark the start of a frame.
-     */
     public static native void beginFrame();
-
-    /**
-     * Mark the end of a frame. Flushes any remaining batches.
-     */
     public static native void endFrame();
 
     /**
@@ -38,26 +27,28 @@ public class RenderHook {
      * @param indexCount Number of indices.
      * @param textureId OpenGL texture ID.
      * @param shaderId OpenGL program ID.
+     * @param drawMode OpenGL draw mode (GL_TRIANGLES=4, GL_LINES=1, etc.)
+     * @param minX AABB Min X (for culling)
+     * @param minY AABB Min Y
+     * @param minZ AABB Min Z
+     * @param maxX AABB Max X
+     * @param maxY AABB Max Y
+     * @param maxZ AABB Max Z
      */
     public static native void drawGeometry(ByteBuffer vertices, int vertexSizeBytes, int vertexCount,
                                            ShortBuffer indices, int indexCount,
-                                           int textureId, int shaderId);
+                                           int textureId, int shaderId,
+                                           int drawMode,
+                                           float minX, float minY, float minZ,
+                                           float maxX, float maxY, float maxZ);
 
-    // Optimized State Management Wrappers
+    public static native void setViewProjection(float[] matrix);
 
     public static native void setBlendFunc(int sfactor, int dfactor);
-
     public static native void setDepthMask(boolean flag);
-
     public static native void enable(int cap);
-
     public static native void disable(int cap);
 
-    // Shader Management
-
-    /**
-     * Compile or retrieve a cached shader program.
-     */
     public static native int getProgram(String vertSource, String fragSource);
 
 }

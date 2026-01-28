@@ -10,48 +10,61 @@ public:
     ~StateManager();
 
     // Program
-    void UseProgram(GLuint program);
+    // Returns true if state changed
+    bool UseProgram(GLuint program);
 
     // Texture
-    void BindTexture(GLenum target, GLuint texture);
+    // Returns true if state changed
+    bool BindTexture(GLenum target, GLuint texture);
     void ActiveTexture(GLenum texture);
 
     // Buffer
-    void BindBuffer(GLenum target, GLuint buffer);
+    bool BindBuffer(GLenum target, GLuint buffer);
 
     // Capabilities
-    void Enable(GLenum cap);
-    void Disable(GLenum cap);
+    // Returns true if state changed
+    bool Enable(GLenum cap);
+    bool Disable(GLenum cap);
 
     // Blending
-    void BlendFunc(GLenum sfactor, GLenum dfactor);
+    // Returns true if state changed
+    bool BlendFunc(GLenum sfactor, GLenum dfactor);
 
     // Depth
-    void DepthMask(GLboolean flag);
+    // Returns true if state changed
+    bool DepthMask(GLboolean flag);
 
-    // Reset cached state (useful at frame start or when external code might have messed with GL)
+    // Viewport/Scissor (New for ANGLE optimization)
+    bool Viewport(GLint x, GLint y, GLsizei width, GLsizei height);
+    bool Scissor(GLint x, GLint y, GLsizei width, GLsizei height);
+
+    // Reset cached state
     void Reset();
 
 private:
     GLuint currentProgram;
     GLuint currentActiveTexture;
-    // Map of texture unit -> bound texture ID for GL_TEXTURE_2D (most common)
-    // For simplicity, we optimize for 2D textures on unit 0-31
     GLuint boundTextures[32];
 
     GLuint currentArrayBuffer;
     GLuint currentElementArrayBuffer;
 
-    // Capability cache
     std::unordered_map<GLenum, bool> capabilityState;
 
-    // Blend state
     GLenum blendSrc;
     GLenum blendDst;
 
-    // Depth state
     GLboolean depthMask;
     bool depthMaskCached;
+
+    // Viewport/Scissor cache
+    GLint vpX, vpY;
+    GLsizei vpW, vpH;
+    bool vpCached;
+
+    GLint scX, scY;
+    GLsizei scW, scH;
+    bool scCached;
 };
 
 #endif // MOBILEGLUES_STATEMANAGER_H

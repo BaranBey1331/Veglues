@@ -2,6 +2,7 @@
 #include <limits>
 
 #define INVALID_GL_UINT 0xFFFFFFFF
+#define INVALID_GL_INT -1
 
 StateManager::StateManager() {
     Reset();
@@ -25,13 +26,18 @@ void StateManager::Reset() {
     blendDst = INVALID_GL_UINT;
 
     depthMaskCached = false;
+
+    vpCached = false;
+    scCached = false;
 }
 
-void StateManager::UseProgram(GLuint program) {
+bool StateManager::UseProgram(GLuint program) {
     if (currentProgram != program) {
         currentProgram = program;
         glUseProgram(program);
+        return true;
     }
+    return false;
 }
 
 void StateManager::ActiveTexture(GLenum texture) {
@@ -41,69 +47,99 @@ void StateManager::ActiveTexture(GLenum texture) {
     }
 }
 
-void StateManager::BindTexture(GLenum target, GLuint texture) {
-    // We strictly optimize GL_TEXTURE_2D as it's the most common in Minecraft
+bool StateManager::BindTexture(GLenum target, GLuint texture) {
     if (target == GL_TEXTURE_2D) {
-        // Calculate unit index from current active texture
-        // GL_TEXTURE0 is 0x84C0
         int unitIndex = currentActiveTexture - GL_TEXTURE0;
         if (unitIndex >= 0 && unitIndex < 32) {
             if (boundTextures[unitIndex] != texture) {
                 boundTextures[unitIndex] = texture;
                 glBindTexture(target, texture);
+                return true;
             }
-            return;
+            return false;
         }
     }
-
-    // Fallback for other targets or units out of range
+    // Fallback always binds but we return true to be safe
     glBindTexture(target, texture);
+    return true;
 }
 
-void StateManager::BindBuffer(GLenum target, GLuint buffer) {
+bool StateManager::BindBuffer(GLenum target, GLuint buffer) {
     if (target == GL_ARRAY_BUFFER) {
         if (currentArrayBuffer != buffer) {
             currentArrayBuffer = buffer;
             glBindBuffer(target, buffer);
+            return true;
         }
     } else if (target == GL_ELEMENT_ARRAY_BUFFER) {
         if (currentElementArrayBuffer != buffer) {
             currentElementArrayBuffer = buffer;
             glBindBuffer(target, buffer);
+            return true;
         }
     } else {
         glBindBuffer(target, buffer);
+        return true;
     }
+    return false;
 }
 
-void StateManager::Enable(GLenum cap) {
+bool StateManager::Enable(GLenum cap) {
     auto it = capabilityState.find(cap);
     if (it == capabilityState.end() || !it->second) {
         capabilityState[cap] = true;
         glEnable(cap);
+        return true;
     }
+    return false;
 }
 
-void StateManager::Disable(GLenum cap) {
+bool StateManager::Disable(GLenum cap) {
     auto it = capabilityState.find(cap);
     if (it == capabilityState.end() || it->second) {
         capabilityState[cap] = false;
         glDisable(cap);
+        return true;
     }
+    return false;
 }
 
-void StateManager::BlendFunc(GLenum sfactor, GLenum dfactor) {
+bool StateManager::BlendFunc(GLenum sfactor, GLenum dfactor) {
     if (blendSrc != sfactor || blendDst != dfactor) {
         blendSrc = sfactor;
         blendDst = dfactor;
         glBlendFunc(sfactor, dfactor);
+        return true;
     }
+    return false;
 }
 
-void StateManager::DepthMask(GLboolean flag) {
+bool StateManager::DepthMask(GLboolean flag) {
     if (!depthMaskCached || depthMask != flag) {
         depthMask = flag;
         depthMaskCached = true;
         glDepthMask(flag);
+        return true;
     }
+    return false;
+}
+
+bool StateManager::Viewport(GLint x, GLint y, GLsizei width, GLsizei height) {
+    if (!vpCached || vpX != x || vpY != y || vpW != width || vpH != height) {
+        vpX = x; vpY = y; vpW = width; vpH = height;
+        vpCached = true;
+        glViewport(x, y, width, height);
+        return true;
+    }
+    return false;
+}
+
+bool StateManager::Scissor(GLint x, GLint y, GLsizei width, GLsizei height) {
+    if (!scCached || scX != x || scY != y || scW != width || scH != height) {
+        scX = x; scY = y; scW = width; scH = height;
+        scCached = true;
+        glScissor(x, y, width, height);
+        return true;
+    }
+    return false;
 }

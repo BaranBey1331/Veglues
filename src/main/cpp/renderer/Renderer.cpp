@@ -1,9 +1,10 @@
 #include "Renderer.h"
 #include <limits>
+#include <cmath>
 
 #define INVALID_GL_UINT 0xFFFFFFFF
 
-Renderer::Renderer() : currentProgramId(INVALID_GL_UINT), currentTextureId(INVALID_GL_UINT) {
+Renderer::Renderer() : currentProgramId(INVALID_GL_UINT), currentTextureId(INVALID_GL_UINT), cullingEnabled(false) {
 }
 
 Renderer::~Renderer() {
@@ -18,7 +19,6 @@ Renderer& Renderer::GetInstance() {
 void Renderer::Init() {
     stateManager.Reset();
     shaderCache.Clear();
-    // Batcher inits itself
 }
 
 void Renderer::Shutdown() {
@@ -27,77 +27,140 @@ void Renderer::Shutdown() {
 }
 
 void Renderer::BeginFrame() {
-    // Reset or prepare frame-level things
-    // Note: We might NOT want to reset state manager fully if context persists,
-    // but verifying state at start of frame is good practice.
-    // For extreme performance, we trust our tracking.
+    batcher.NextFrame();
 }
 
 void Renderer::EndFrame() {
     batcher.Flush();
 }
 
+void Renderer::SetViewProj(const float* mat) {
+    UpdateFrustum(mat);
+    cullingEnabled = true;
+}
+
+void Renderer::UpdateFrustum(const float* m) {
+    // Extract planes from ViewProj matrix (Column Major)
+    // Left
+    frustumPlanes[0].a = m[3] + m[0];
+    frustumPlanes[0].b = m[7] + m[4];
+    frustumPlanes[0].c = m[11] + m[8];
+    frustumPlanes[0].d = m[15] + m[12];
+    frustumPlanes[0].Normalize();
+
+    // Right
+    frustumPlanes[1].a = m[3] - m[0];
+    frustumPlanes[1].b = m[7] - m[4];
+    frustumPlanes[1].c = m[11] - m[8];
+    frustumPlanes[1].d = m[15] - m[12];
+    frustumPlanes[1].Normalize();
+
+    // Bottom
+    frustumPlanes[2].a = m[3] + m[1];
+    frustumPlanes[2].b = m[7] + m[5];
+    frustumPlanes[2].c = m[11] + m[9];
+    frustumPlanes[2].d = m[15] + m[13];
+    frustumPlanes[2].Normalize();
+
+    // Top
+    frustumPlanes[3].a = m[3] - m[1];
+    frustumPlanes[3].b = m[7] - m[5];
+    frustumPlanes[3].c = m[11] - m[9];
+    frustumPlanes[3].d = m[15] - m[13];
+    frustumPlanes[3].Normalize();
+
+    // Near
+    frustumPlanes[4].a = m[3] + m[2];
+    frustumPlanes[4].b = m[7] + m[6];
+    frustumPlanes[4].c = m[11] + m[10];
+    frustumPlanes[4].d = m[15] + m[14];
+    frustumPlanes[4].Normalize();
+
+    // Far
+    frustumPlanes[5].a = m[3] - m[2];
+    frustumPlanes[5].b = m[7] - m[6];
+    frustumPlanes[5].c = m[11] - m[10];
+    frustumPlanes[5].d = m[15] - m[14];
+    frustumPlanes[5].Normalize();
+}
+
+bool Renderer::IsVisible(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+    // AABB Plane check
+    // If AABB is completely behind any plane, it's culled.
+    for (int i = 0; i < 6; i++) {
+        // Find point furthest in direction of plane normal
+        float px = (frustumPlanes[i].a > 0) ? maxX : minX;
+        float py = (frustumPlanes[i].b > 0) ? maxY : minY;
+        float pz = (frustumPlanes[i].c > 0) ? maxZ : minZ;
+
+        if (frustumPlanes[i].Distance(px, py, pz) < 0) {
+            return false; // Culled
+        }
+    }
+    return true;
+}
+
 void Renderer::DrawGeometry(const void* vertices, int vertexSizeBytes, int vertexCount,
                             const void* indices, int indexCount,
-                            GLuint textureId, GLuint programId) {
-    // Check if pipeline state changes require a flush
-    bool stateChanged = false;
+                            GLuint textureId, GLuint programId,
+                            GLenum drawMode,
+                            float minX, float minY, float minZ,
+                            float maxX, float maxY, float maxZ) {
 
-    if (programId != currentProgramId) {
-        stateChanged = true;
-    } else if (textureId != currentTextureId) {
-        stateChanged = true;
+    // Draw Reduction / Culling
+    if (vertexCount < 2 || indexCount < 2) return;
+
+    // Frustum Culling
+    // Only cull if valid AABB provided (not all zeros or inverted)
+    if (cullingEnabled && maxX >= minX) {
+        if (!IsVisible(minX, minY, minZ, maxX, maxY, maxZ)) {
+            return; // Culled!
+        }
     }
 
-    // In a real engine, we'd also check if vertex format changed,
-    // but Batcher::AddGeometry handles vertex stride changes by flushing.
+    bool stateChanged = false;
+
+    if (programId != currentProgramId) stateChanged = true;
+    else if (textureId != currentTextureId) stateChanged = true;
 
     if (stateChanged) {
         batcher.Flush();
 
-        // Apply new state
         if (programId != currentProgramId) {
-            stateManager.UseProgram(programId);
+            if (stateManager.UseProgram(programId)) {}
             currentProgramId = programId;
         }
 
         if (textureId != currentTextureId) {
-            stateManager.BindTexture(GL_TEXTURE_2D, textureId);
+            if (stateManager.BindTexture(GL_TEXTURE_2D, textureId)) {}
             currentTextureId = textureId;
         }
     }
 
-    batcher.AddGeometry(vertices, vertexSizeBytes, vertexCount, indices, indexCount);
+    // Pass mode
+    batcher.AddGeometry(vertices, vertexSizeBytes, vertexCount, indices, indexCount, drawMode);
 }
 
 void Renderer::SetBlendFunc(GLenum sfactor, GLenum dfactor) {
-    // Determine if change is needed (StateManager does this too, but we need to know to Flush)
-    // Actually, we can just delegate to StateManager, but if StateManager SAYS it changed, we flushed too late?
-    // No, we must Flush BEFORE changing state.
-    // So we check our cached knowledge or ask StateManager (if it exposed getters).
-    // For now, let's flush conservatively. "Minimize state changes" - StateManager handles the GL call skipping.
-    // But Batcher must be flushed if we *intend* to change state that affects the next draw.
-    // Optimization: Only flush if state IS going to change.
-
-    // Since StateManager encapsulates current state, we might over-flush if we don't expose getters.
-    // But over-flushing is better than incorrect rendering.
-    // Ideally StateManager returns "true" if state changed.
-
-    batcher.Flush();
-    stateManager.BlendFunc(sfactor, dfactor);
+    if (stateManager.BlendFunc(sfactor, dfactor)) {
+        batcher.Flush();
+    }
 }
 
 void Renderer::SetDepthMask(GLboolean flag) {
-    batcher.Flush();
-    stateManager.DepthMask(flag);
+    if (stateManager.DepthMask(flag)) {
+        batcher.Flush();
+    }
 }
 
 void Renderer::Enable(GLenum cap) {
-    batcher.Flush();
-    stateManager.Enable(cap);
+    if (stateManager.Enable(cap)) {
+        batcher.Flush();
+    }
 }
 
 void Renderer::Disable(GLenum cap) {
-    batcher.Flush();
-    stateManager.Disable(cap);
+    if (stateManager.Disable(cap)) {
+        batcher.Flush();
+    }
 }
