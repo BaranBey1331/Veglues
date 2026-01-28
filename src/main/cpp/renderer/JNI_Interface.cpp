@@ -69,4 +69,24 @@ JNIEXPORT jint JNICALL Java_com_mobileglues_forge_RenderHook_getProgram(JNIEnv* 
     return (jint)program;
 }
 
+JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setPerformanceMode(JNIEnv* env, jclass clazz, jboolean enabled) {
+    Renderer::GetInstance().SetPerformanceMode(enabled);
+}
+
+JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setUniform1i(JNIEnv* env, jclass clazz, jint location, jint v0) {
+    Renderer::GetInstance().SetUniform1i(location, v0);
+}
+
+JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setUniform1f(JNIEnv* env, jclass clazz, jint location, jfloat v0) {
+    Renderer::GetInstance().SetUniform1f(location, v0);
+}
+
+JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setUniformMatrix4fv(JNIEnv* env, jclass clazz, jint location, jint count, jboolean transpose, jfloatArray value) {
+    jfloat* mat = env->GetFloatArrayElements(value, NULL);
+    if (mat) {
+        Renderer::GetInstance().SetUniformMatrix4fv(location, count, transpose, mat);
+        env->ReleaseFloatArrayElements(value, mat, JNI_ABORT);
+    }
+}
+
 }

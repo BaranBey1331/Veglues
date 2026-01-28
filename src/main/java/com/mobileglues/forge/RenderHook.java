@@ -51,4 +51,10 @@ public class RenderHook {
 
     public static native int getProgram(String vertSource, String fragSource);
 
+    // New Optimizations
+    public static native void setPerformanceMode(boolean enabled);
+
+    public static native void setUniform1i(int location, int v0);
+    public static native void setUniform1f(int location, float v0);
+    public static native void setUniformMatrix4fv(int location, int count, boolean transpose, float[] value);
 }

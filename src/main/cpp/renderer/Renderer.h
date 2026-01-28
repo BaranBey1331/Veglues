@@ -46,6 +46,14 @@ public:
     void Enable(GLenum cap);
     void Disable(GLenum cap);
 
+    // Performance Mode
+    void SetPerformanceMode(bool enabled);
+
+    // Uniform Wrappers (Forward to StateManager)
+    void SetUniform1i(GLint location, GLint v0);
+    void SetUniform1f(GLint location, GLfloat v0);
+    void SetUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value);
+
     void BeginFrame();
     void EndFrame();
 
@@ -71,8 +79,14 @@ private:
     FrustumPlane frustumPlanes[6];
     bool cullingEnabled;
 
+    // Aggressive Optimization
+    bool performanceMode;
+
     void UpdateFrustum(const float* vp);
     bool IsVisible(float minX, float minY, float minZ, float maxX, float maxY, float maxZ);
+
+    // Thread pinning
+    void PinThreadToPerformanceCore();
 };
 
 #endif // MOBILEGLUES_RENDERER_H

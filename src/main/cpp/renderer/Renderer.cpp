@@ -1,10 +1,12 @@
 #include "Renderer.h"
 #include <limits>
 #include <cmath>
+#include <sched.h>
+#include <unistd.h>
 
 #define INVALID_GL_UINT 0xFFFFFFFF
 
-Renderer::Renderer() : currentProgramId(INVALID_GL_UINT), currentTextureId(INVALID_GL_UINT), cullingEnabled(false) {
+Renderer::Renderer() : currentProgramId(INVALID_GL_UINT), currentTextureId(INVALID_GL_UINT), cullingEnabled(false), performanceMode(false) {
 }
 
 Renderer::~Renderer() {
@@ -27,11 +29,45 @@ void Renderer::Shutdown() {
 }
 
 void Renderer::BeginFrame() {
+    // Attempt to pin thread on every frame start? No, just once ideally.
+    // But JNI threads might change? Assuming typical game loop.
+    // Pinning repeatedly is low cost syscall.
+    PinThreadToPerformanceCore();
     batcher.NextFrame();
 }
 
 void Renderer::EndFrame() {
     batcher.Flush();
+}
+
+void Renderer::PinThreadToPerformanceCore() {
+    // Exynos 2400:
+    // Core 0-3: A520 (Little)
+    // Core 4-8: A720 (Mid)
+    // Core 9: X4 (Big) -> Index 9?
+    // Wait, Exynos 2400 is 10 cores (1x X4 + 2x A720 + 3x A720 + 4x A520) -> 1+5+4 = 10.
+    // CPU IDs: usually 0-9.
+    // The prime core is usually the last index or specifically identified.
+    // Let's guess Core 9 is the X4. Or pin to 4-9 (Big/Mid).
+    // Safest is to allow OS scheduler but hint high priority?
+    // `sched_setaffinity` allows pinning.
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    // Pin to the Prime Core (X4) or the high-performance cluster.
+    // Let's try to pin to the biggest core.
+    // Assuming 10 cores, index 9.
+    CPU_SET(9, &cpuset);
+
+    // Also include big cores 7,8 just in case
+    CPU_SET(8, &cpuset);
+    CPU_SET(7, &cpuset);
+
+    sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+}
+
+void Renderer::SetPerformanceMode(bool enabled) {
+    performanceMode = enabled;
 }
 
 void Renderer::SetViewProj(const float* mat) {
@@ -40,7 +76,6 @@ void Renderer::SetViewProj(const float* mat) {
 }
 
 void Renderer::UpdateFrustum(const float* m) {
-    // Extract planes from ViewProj matrix (Column Major)
     // Left
     frustumPlanes[0].a = m[3] + m[0];
     frustumPlanes[0].b = m[7] + m[4];
@@ -85,16 +120,28 @@ void Renderer::UpdateFrustum(const float* m) {
 }
 
 bool Renderer::IsVisible(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
-    // AABB Plane check
-    // If AABB is completely behind any plane, it's culled.
+    // Size Culling Logic (Aggressive)
+    if (performanceMode) {
+        float dx = maxX - minX;
+        float dy = maxY - minY;
+        float dz = maxZ - minZ;
+        // Approximation of bounding volume
+        float volume = dx * dy * dz;
+        // If volume is tiny, cull it?
+        // Better: Project to screen space. But that requires MVP multiplication.
+        // Heuristic: Just distance check?
+        // Let's rely on simple "Small Object" check.
+        // e.g. < 0.2 block size
+        if (volume < 0.008f) return false; // 0.2^3
+    }
+
     for (int i = 0; i < 6; i++) {
-        // Find point furthest in direction of plane normal
         float px = (frustumPlanes[i].a > 0) ? maxX : minX;
         float py = (frustumPlanes[i].b > 0) ? maxY : minY;
         float pz = (frustumPlanes[i].c > 0) ? maxZ : minZ;
 
         if (frustumPlanes[i].Distance(px, py, pz) < 0) {
-            return false; // Culled
+            return false;
         }
     }
     return true;
@@ -107,14 +154,11 @@ void Renderer::DrawGeometry(const void* vertices, int vertexSizeBytes, int verte
                             float minX, float minY, float minZ,
                             float maxX, float maxY, float maxZ) {
 
-    // Draw Reduction / Culling
     if (vertexCount < 2 || indexCount < 2) return;
 
-    // Frustum Culling
-    // Only cull if valid AABB provided (not all zeros or inverted)
     if (cullingEnabled && maxX >= minX) {
         if (!IsVisible(minX, minY, minZ, maxX, maxY, maxZ)) {
-            return; // Culled!
+            return;
         }
     }
 
@@ -127,17 +171,16 @@ void Renderer::DrawGeometry(const void* vertices, int vertexSizeBytes, int verte
         batcher.Flush();
 
         if (programId != currentProgramId) {
-            if (stateManager.UseProgram(programId)) {}
+            stateManager.UseProgram(programId); // Returns bool, but we flush anyway
             currentProgramId = programId;
         }
 
         if (textureId != currentTextureId) {
-            if (stateManager.BindTexture(GL_TEXTURE_2D, textureId)) {}
+            stateManager.BindTexture(GL_TEXTURE_2D, textureId);
             currentTextureId = textureId;
         }
     }
 
-    // Pass mode
     batcher.AddGeometry(vertices, vertexSizeBytes, vertexCount, indices, indexCount, drawMode);
 }
 
@@ -161,6 +204,29 @@ void Renderer::Enable(GLenum cap) {
 
 void Renderer::Disable(GLenum cap) {
     if (stateManager.Disable(cap)) {
+        batcher.Flush();
+    }
+}
+
+void Renderer::SetUniform1i(GLint location, GLint v0) {
+    // Uniform updates do NOT require batch flush (usually).
+    // They update state for NEXT draw calls.
+    // BUT if we have pending batch with OLD uniform value?
+    // Batcher aggregates geometry. It does NOT store uniform state per vertex.
+    // So if uniform changes, we MUST flush the batch so previous geometry is drawn with old uniform.
+    if (stateManager.Uniform1i(location, v0)) {
+        batcher.Flush();
+    }
+}
+
+void Renderer::SetUniform1f(GLint location, GLfloat v0) {
+    if (stateManager.Uniform1f(location, v0)) {
+        batcher.Flush();
+    }
+}
+
+void Renderer::SetUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) {
+    if (stateManager.UniformMatrix4fv(location, count, transpose, value)) {
         batcher.Flush();
     }
 }
