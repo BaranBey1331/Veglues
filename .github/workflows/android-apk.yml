@@ -22,11 +22,11 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Build with Gradle
+    - name: Build with Gradle (detailed output)
       run: |
         # Generate wrapper if missing or just run gradle
         gradle wrapper
-        ./gradlew assembleDebug
+        ./gradlew assembleDebug --stacktrace --warning-mode all
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
