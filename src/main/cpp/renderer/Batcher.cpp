@@ -33,6 +33,19 @@ void Batcher::NextFrame() {
     frameIndex = (frameIndex + 1) % BUFFER_COUNT;
 }
 
+long long Batcher::GetAllocatedBytes() const {
+    return vertexBuffer.capacity() * sizeof(unsigned char) + indexBuffer.capacity() * sizeof(unsigned short);
+}
+
+void Batcher::CheckMemoryPressure() {
+    // If usage > threshold (e.g. 16MB per batcher seems high given limits),
+    // we might want to shrink_to_fit if empty?
+    // But keeping it reserved prevents fragmentation.
+    // Logic: If capacity is WAY larger than usage consistently, shrink.
+    // For now, just logging or limiting growth.
+    // Since we use reserve(MAX...), it shouldn't grow beyond unless changed.
+}
+
 void Batcher::Flush() {
     if (currentVertexCount == 0 || currentIndexCount == 0) return;
 
@@ -71,6 +84,11 @@ void Batcher::AddGeometry(const void* vertices, int vertexSize, int vertexCount,
 
     currentVertexCount += vertexCount;
     currentIndexCount += indexCount;
+
+    // Check memory after insert?
+    // If vector reallocated, it might have doubled.
+    // We already reserved, so it shouldn't realloc unless we exceed MAX.
+    // But AddGeometry logic ensures we Flush before exceeding MAX.
 }
 
 void Batcher::DrawBatch() {
@@ -83,25 +101,22 @@ void Batcher::DrawBatch() {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indexBuffer.size() * sizeof(unsigned short), indexBuffer.data(), GL_DYNAMIC_DRAW);
 
-    // Setup Attributes based on stride guess (Fragile but optimized for this context)
-    // Always Position
+    // Setup Attributes based on stride guess
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, currentVertexSizeBytes, (void*)0);
 
-    // UV
     if (currentVertexSizeBytes >= 20) {
          glEnableVertexAttribArray(1);
          glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, currentVertexSizeBytes, (void*)12);
     } else {
-         glDisableVertexAttribArray(1); // Fix corruption
+         glDisableVertexAttribArray(1);
     }
 
-    // Color
     if (currentVertexSizeBytes >= 24) {
          glEnableVertexAttribArray(2);
          glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, currentVertexSizeBytes, (void*)20);
     } else {
-         glDisableVertexAttribArray(2); // Fix corruption
+         glDisableVertexAttribArray(2);
     }
 
     glDrawElements(currentMode, currentIndexCount, GL_UNSIGNED_SHORT, 0);

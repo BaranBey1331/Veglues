@@ -7,6 +7,7 @@
 #include <mutex>
 #include <vector>
 #include <cmath>
+#include <android/thermal.h>
 
 struct FrustumPlane {
     float a, b, c, d;
@@ -43,11 +44,14 @@ public:
 
     void SetBlendFunc(GLenum sfactor, GLenum dfactor);
     void SetDepthMask(GLboolean flag);
+    void SetColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a);
     void Enable(GLenum cap);
     void Disable(GLenum cap);
 
     // Performance Mode
     void SetPerformanceMode(bool enabled);
+    void SetExtremeMode(bool enabled);
+    void SetThermalControl(bool enabled);
 
     // Uniform Wrappers (Forward to StateManager)
     void SetUniform1i(GLint location, GLint v0);
@@ -78,15 +82,27 @@ private:
     // Culling
     FrustumPlane frustumPlanes[6];
     bool cullingEnabled;
+    float cameraX, cameraY, cameraZ; // For distance culling
 
     // Aggressive Optimization
     bool performanceMode;
+    bool extremeMode;
+    bool thermalControl;
+
+    // Metrics & Thermal
+    AThermalManager* thermalManager;
+    AThermalStatus currentThermalStatus;
+    long long lastFrameTimeNs;
+    float currentFPS;
 
     void UpdateFrustum(const float* vp);
     bool IsVisible(float minX, float minY, float minZ, float maxX, float maxY, float maxZ);
 
     // Thread pinning
     void PinThreadToPerformanceCore();
+
+    void UpdatePerformanceMetrics();
+    static void OnThermalStatusChanged(void *data, AThermalStatus status);
 };
 
 #endif // MOBILEGLUES_RENDERER_H

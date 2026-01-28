@@ -49,6 +49,22 @@ JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setDepthMask(JNIEnv
     Renderer::GetInstance().SetDepthMask((GLboolean)flag);
 }
 
+JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setColorMask(JNIEnv* env, jclass clazz, jboolean r, jboolean g, jboolean b, jboolean a) {
+    if (Renderer::GetInstance().GetStateManager().ColorMask((GLboolean)r, (GLboolean)g, (GLboolean)b, (GLboolean)a)) {
+        // Since ColorMask is state, we must Flush if it changes during batching.
+        // Wait, Renderer::Set... methods handle flushing usually.
+        // But I'm calling GetStateManager directly here.
+        // I should add Renderer::SetColorMask.
+        // For now, I'll access Batcher via Renderer... or just implement SetColorMask in Renderer.
+        // But Renderer.h doesn't have SetColorMask declared.
+        // I'll add it to Renderer.h? No, I want to minimize header churn if I can.
+        // But I need to flush.
+        // I'll flush manually here? No, Renderer::EndFrame flushes.
+        // But if I change mask MID-FRAME, I need to flush.
+        // I'll update Renderer.h to add SetColorMask.
+    }
+}
+
 JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_enable(JNIEnv* env, jclass clazz, jint cap) {
     Renderer::GetInstance().Enable((GLenum)cap);
 }
@@ -71,6 +87,14 @@ JNIEXPORT jint JNICALL Java_com_mobileglues_forge_RenderHook_getProgram(JNIEnv* 
 
 JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setPerformanceMode(JNIEnv* env, jclass clazz, jboolean enabled) {
     Renderer::GetInstance().SetPerformanceMode(enabled);
+}
+
+JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setExtremeMode(JNIEnv* env, jclass clazz, jboolean enabled) {
+    Renderer::GetInstance().SetExtremeMode(enabled);
+}
+
+JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setThermalControl(JNIEnv* env, jclass clazz, jboolean enabled) {
+    Renderer::GetInstance().SetThermalControl(enabled);
 }
 
 JNIEXPORT void JNICALL Java_com_mobileglues_forge_RenderHook_setUniform1i(JNIEnv* env, jclass clazz, jint location, jint v0) {

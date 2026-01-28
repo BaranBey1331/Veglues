@@ -5,11 +5,12 @@
 #define INVALID_GL_UINT 0xFFFFFFFF
 #define INVALID_GL_INT -1
 
-// Define wrapped functions if not in stub
 extern "C" {
 void glUniform1i(GLint location, GLint v0);
 void glUniform1f(GLint location, GLfloat v0);
 void glUniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
+void glColorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha);
+void glStencilMask(GLuint mask);
 }
 
 StateManager::StateManager() {
@@ -34,6 +35,8 @@ void StateManager::Reset() {
     blendDst = INVALID_GL_UINT;
 
     depthMaskCached = false;
+    colorMaskCached = false;
+    stencilMaskCached = false;
 
     vpCached = false;
     scCached = false;
@@ -45,10 +48,6 @@ bool StateManager::UseProgram(GLuint program) {
     if (currentProgram != program) {
         currentProgram = program;
         glUseProgram(program);
-        // Uniforms are per-program state.
-        // When switching programs, the "current" uniform locations refer to the new program.
-        // The values in our cache for location X in old program are irrelevant for location X in new program.
-        // So we MUST clear the cache.
         uniformCache.clear();
         return true;
     }
@@ -138,6 +137,26 @@ bool StateManager::DepthMask(GLboolean flag) {
     return false;
 }
 
+bool StateManager::ColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a) {
+    if (!colorMaskCached || colorMaskR != r || colorMaskG != g || colorMaskB != b || colorMaskA != a) {
+        colorMaskR = r; colorMaskG = g; colorMaskB = b; colorMaskA = a;
+        colorMaskCached = true;
+        glColorMask(r, g, b, a);
+        return true;
+    }
+    return false;
+}
+
+bool StateManager::StencilMask(GLuint mask) {
+    if (!stencilMaskCached || stencilMask != mask) {
+        stencilMask = mask;
+        stencilMaskCached = true;
+        glStencilMask(mask);
+        return true;
+    }
+    return false;
+}
+
 bool StateManager::Viewport(GLint x, GLint y, GLsizei width, GLsizei height) {
     if (!vpCached || vpX != x || vpY != y || vpW != width || vpH != height) {
         vpX = x; vpY = y; vpW = width; vpH = height;
@@ -191,10 +210,8 @@ bool StateManager::Uniform1f(GLint location, GLfloat v0) {
 bool StateManager::UniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) {
     if (location == -1) return false;
     UniformValue& val = uniformCache[location];
-    // Check if changed
     bool changed = !val.valid || val.isInt || !val.isMatrix || val.count != count;
     if (!changed) {
-        // Deep compare
         if (std::memcmp(val.mVal, value, count * 16 * sizeof(float)) != 0) {
             changed = true;
         }
@@ -205,15 +222,9 @@ bool StateManager::UniformMatrix4fv(GLint location, GLsizei count, GLboolean tra
         val.isInt = false;
         val.isMatrix = true;
         val.count = count;
-        // Only cache first 16 floats (1 matrix) for simplicity/speed if count=1?
-        // If count > 1 (array), we might overflow our fixed buffer if we aren't careful.
-        // `mVal` is 16 floats.
         if (count == 1) {
             std::memcpy(val.mVal, value, 16 * sizeof(float));
         } else {
-             // For arrays, we don't cache (or need larger storage).
-             // Fallback: invalidate cache for arrays > 1 to be safe, or just always update.
-             // We'll mark invalid to force update next time too, or just update and not cache data.
              val.valid = false;
         }
         glUniformMatrix4fv(location, count, transpose, value);

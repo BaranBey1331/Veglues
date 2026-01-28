@@ -22,6 +22,10 @@ public:
 
     void NextFrame();
 
+    // Memory Control
+    long long GetAllocatedBytes() const;
+    void CheckMemoryPressure();
+
 private:
     std::vector<unsigned char> vertexBuffer;
     std::vector<unsigned short> indexBuffer;
